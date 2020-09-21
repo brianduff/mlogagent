@@ -23,7 +23,11 @@ jmethodID break_methodIDs[] = {
   0
 };
 
+
+// Sorry for the disgusting use of globals.
 int registered = 0;
+FILE *fout;
+
 
 const char *GetClassName(JNIEnv *env, jclass klass) {
   jclass clzclz = (*env)->FindClass(env, "java/lang/Class");
@@ -70,7 +74,7 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
     i++;
   }
 
-  printf("%s: %s\n", method_name, converted);
+  fprintf(fout, "%s: %s\n", method_name, converted);
  
   (*jni)->ReleaseStringUTFChars(jni, result, converted);
   (*jni)->DeleteLocalRef(jni, clazz);
@@ -114,6 +118,25 @@ void JNICALL ClassPrepareCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thre
 JNIEXPORT jint JNICALL 
 Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
   printf("Loaded agent\n");
+  fout = stdout;
+
+  // Let's see if there's a log file we want to write to.
+  char *option = strtok(options, ",");
+  while (option != NULL) {
+    // Find the =
+    size_t pos = strcspn(option, "=");
+    if (pos != strlen(option)) {
+      if (strncmp(option, "file", 4) == 0) {
+        char *file = option + pos + 1;
+        printf("Writing output to file: %s\n", file);
+        fout = fopen(file, "w");
+      } else {
+        printf("Unrecognized option: %s\n", option);
+      }
+    }
+
+    option = strtok(NULL, ",");
+  }
 
   // Get an env object.
   jvmtiEnv *env;
@@ -136,4 +159,11 @@ Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
   assert(JVMTI_ERROR_NONE == (*env)->SetEventNotificationMode(env, JVMTI_ENABLE, JVMTI_EVENT_CLASS_PREPARE, NULL));
 
   return JNI_OK;
+}
+
+JNIEXPORT void JNICALL 
+Agent_OnUnload(JavaVM *vm) {
+  if (fout != stdout) {
+    fclose(fout);
+  }
 }

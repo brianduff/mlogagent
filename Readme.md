@@ -19,3 +19,9 @@ java -agentpath:/Users/bduff/Documents/Development/mlogagent/libmlogagent.dylib 
 ```
 
 You should see logging whenever the `someMethod` or `anotherMethod` methods are called.
+
+You can also get it to write to a file using the `=file=/tmp/out.txt` option at the end of the `-agentpath`.
+
+```
+java -agentpath:/Users/bduff/Documents/Development/mlogagent/libmlogagent.dylib=file=/tmp/out.txt -cp classes frodo.Test
+```

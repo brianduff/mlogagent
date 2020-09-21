@@ -9,7 +9,7 @@ public class Test {
     System.out.println(someMethod(new RealFile("Hello")));
     System.out.println(someMethod(new RealFile("World")));
 
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 10; i++) {
       if (i % 2 == 0) {
         someMethod(new RealFile("" + i));
       } else {
