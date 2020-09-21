@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "name": "Mac",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/usr/local/java-runtime/impl/8/include",
+                "/usr/local/java-runtime/impl/8/include/darwin"
+            ],
+            "defines": [],
+            "macFrameworkPath": [
+                "/usr/local/java-runtime/impl/8/include",
+                "/usr/local/java-runtime/impl/8/include/darwin"
+            ],
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "clang-x64"
+        }
+    ],
+    "version": 4
+}
