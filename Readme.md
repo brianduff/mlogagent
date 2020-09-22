@@ -78,3 +78,7 @@ someMethod: 8
 anotherMethod:  9
   trace: <- anotherMethod<- run<- main
 ```
+
+## TODO
+
+rewrite this whole thing in rust, because it's pretty disgusting with its yucky hand rolled yaml parser 'n all.
