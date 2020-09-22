@@ -2,122 +2,157 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
+#include <stdlib.h>
 
-#define CLASS_TO_WATCH "frodo/Test"
-
-const char* const break_methods[] = {
-  "someMethod",
-  "anotherMethod",
-  0
-};
-
-const char* const break_method_signatures[] = {
-  "(Lfrodo/Test$VirtualFile;)Ljava/lang/String;",
-  "(Lfrodo/Test$VirtualFile;)Ljava/lang/String;",
-  0
-};
-
-jmethodID break_methodIDs[] = {
-  0,
-  0,
-  0
-};
-
+#include "config.h"
 
 // Sorry for the disgusting use of globals.
 int registered = 0;
 FILE *fout;
+Config *config;
 
+bool in_prepare = false;
 
-const char *GetClassName(JNIEnv *env, jclass klass) {
-  jclass clzclz = (*env)->FindClass(env, "java/lang/Class");
-  jmethodID mid = (*env)->GetMethodID(env, clzclz, "getName", "()Ljava/lang/String;");
-
-   (*env)->DeleteLocalRef(env, clzclz);
-
-  if (mid == NULL) {
-    printf("Unable to load getName() method");
-    return NULL;
-  } else {
-    jstring class_name = (jstring) (*env)->CallObjectMethod(env, klass, mid);
-
-    jboolean isCopy;
-    const char *converted = (*env)->GetStringUTFChars(env, class_name, &isCopy);
-
-    return converted;
+void findConfig(jmethodID method, ClassConfig **classConfigReturn, MethodConfig **methodConfigReturn) {
+  // Figure out which class and method we're in.
+  ClassConfig *classConfig = config->class_list;
+  while (classConfig != NULL) {
+    MethodConfig *methodConfig = classConfig->method_list;
+    while (methodConfig != NULL) {
+      if (method == methodConfig->runtimeData) {
+        *classConfigReturn = classConfig;
+        *methodConfigReturn = methodConfig;
+        return;
+      }
+      methodConfig = methodConfig->next;
+    }
+    classConfig = classConfig->next;
   }
+
 }
 
 // Called when a breakpoint is hit.
 void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread, jmethodID method, jlocation location) {
-  jobject the_object;
-  int err = (*jvmti_env)->GetLocalObject(jvmti_env, thread, 0, 1, &the_object);
+  ClassConfig *classConfig = NULL;
+  MethodConfig *methodConfig = NULL;
 
-  // Call the "getPath" method.
-  jclass clazz = (*jni)->GetObjectClass(jni, the_object);
-  jmethodID tostring_method = (*jni)->GetMethodID(jni, clazz, "toString", "()Ljava/lang/String;");
-
-  jstring result = (jstring) (*jni)->CallObjectMethod(jni, the_object, tostring_method);
-  jboolean isCopy;
-  const char *converted = (*jni)->GetStringUTFChars(jni, result, &isCopy);
-
-  // Find which method we're in.
-  int i = 0;
-  const char *method_name = "unknown";
-  for (;;) {
-    if (break_methods[i] == NULL) break;
-
-    if (method == break_methodIDs[i]) {
-      method_name = break_methods[i];
-    }
-
-    i++;
+  findConfig(method, &classConfig, &methodConfig);
+  if (classConfig == NULL || methodConfig == NULL) {
+    fprintf(stderr, "mlogagent: Hit unknown breakpoint\n.");
+    return;
   }
 
-  fprintf(fout, "%s: %s\n", method_name, converted);
+  // Get hold of the parameter
+  jobject the_parameter;
+  int err = (*jvmti_env)->GetLocalObject(jvmti_env, thread, 0, methodConfig->parameterPosition, &the_parameter);
+  if (err != JVMTI_ERROR_NONE) {
+    fprintf(stderr, "mlogagent: GetLocalObject error: %d\n", err);
+    return;
+  }
+
+  char *methodToCall = "toString";
+  if (methodConfig->displayMethod != NULL) {
+    methodToCall = methodConfig->displayMethod;
+  }
+  jclass clazz = (*jni)->GetObjectClass(jni, the_parameter);
+  jmethodID tostring_method = (*jni)->GetMethodID(jni, clazz, methodToCall, "()Ljava/lang/String;");
+
+  jstring result = (jstring) (*jni)->CallObjectMethod(jni, the_parameter, tostring_method);
+  if (result == NULL) {
+    fprintf(fout, "%s: null\n", methodConfig->name);
+  } else {
+    jboolean isCopy;
+    const char *converted = (*jni)->GetStringUTFChars(jni, result, &isCopy);
+    fprintf(fout, "%s: %s\n", methodConfig->name, converted);
+    (*jni)->ReleaseStringUTFChars(jni, result, converted);
+  }
+  
+
+  // Show a stack trace if we've been asked to.
+  if (methodConfig->showTrace) {
+    jvmtiFrameInfo frames[8];
+    jint count;
+    jvmtiError err;
+
+    err = (*jvmti_env)->GetStackTrace(jvmti_env, thread, 0, 8, frames, &count);
+    if (err == JVMTI_ERROR_NONE && count >= 1) {
+      char *methodName;
+      fprintf(fout, "  trace: ");
+      for (int i = 0; i < count; i++) {
+        err = (*jvmti_env)->GetMethodName(jvmti_env, frames[i].method, &methodName, NULL, NULL);
+        if (err == JVMTI_ERROR_NONE) {
+          fprintf(fout, "<- %s", methodName);
+        }
+      }
+      fprintf(fout, "\n");
+    }
+  }
+
+  fflush(fout);
  
-  (*jni)->ReleaseStringUTFChars(jni, result, converted);
   (*jni)->DeleteLocalRef(jni, clazz);
 
 }
 
+// Attach a breakpoint to configured methods
+void attachMethodBreakpoints(jvmtiEnv *jvmti_env, JNIEnv *jni, jclass clazz, ClassConfig *classConfig) {
+  MethodConfig *methodConfig = classConfig->method_list;
+  while (methodConfig != NULL) {
+    jmethodID mid = (*jni)->GetMethodID(jni, clazz, methodConfig->name, methodConfig->signature);
+    methodConfig->runtimeData = mid;
+    if (mid != NULL) {
+      assert(JVMTI_ERROR_NONE == (*jvmti_env)->SetBreakpoint(jvmti_env, mid, 0));
+      // printf("Set breakpoint for %s.%s%s\n", classConfig->name, methodConfig->name, methodConfig->signature);
+    } else {
+      fprintf(stderr, "mlogagent: Can't find the method: %s.%s%s\n", classConfig->name, methodConfig->name, methodConfig->signature);
+    }
+
+    methodConfig = methodConfig->next;
+  }
+}
+
 // Called when a class is loaded.
 void JNICALL ClassPrepareCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread, jclass klass) {
-  jclass testClass = (*jni)->FindClass(jni, CLASS_TO_WATCH);
-  (*jni)->ExceptionClear(jni);
-
-  if (registered == 1) {
+  // Avoid re-entrancy
+  if (in_prepare) {
     return;
   }
 
-  if (testClass != NULL) {
-    registered = 1;
-
-    int i = 0;
-    for (;;) {
-      const char *method = break_methods[i];
-      if (method == NULL) break;
-      const char *signature = break_method_signatures[i];
-
-      jmethodID mid = (*jni)->GetMethodID(jni, testClass, method, signature);
-      break_methodIDs[i] = mid;
-      if (mid != NULL) {
-        assert(JVMTI_ERROR_NONE == (*jvmti_env)->SetBreakpoint(jvmti_env, mid, 0));
-      } else {
-        printf("Can't find the method: %s.%s%s\n", CLASS_TO_WATCH, method, signature);
-      }
-
-      i++;
-    }
-
-    (*jni)->DeleteLocalRef(jni, testClass);
+  if (config->runtime_all_attached) {
+    return;
   }
+
+  in_prepare = true;
+
+  // Try to find all classes we want to attach to
+  ClassConfig *classConfig = config->class_list;
+  bool allAttached = true;
+  while (classConfig != NULL) {
+    if (!classConfig->runtime_attached) {
+      // Try to find the class to attach to
+      jclass clazz = (*jni)->FindClass(jni, classConfig->name);
+      (*jni)->ExceptionClear(jni);
+
+      if (clazz == NULL) {
+        allAttached = false;
+      } else {
+        attachMethodBreakpoints(jvmti_env, jni, clazz, classConfig);
+        (*jni)->DeleteLocalRef(jni, clazz);
+      }
+    }
+    classConfig = classConfig->next;
+  }
+  if (allAttached) {
+    config->runtime_all_attached = true;
+  }
+
+  in_prepare = false;
 }
 
 
 JNIEXPORT jint JNICALL 
 Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
-  printf("Loaded agent\n");
   fout = stdout;
 
   // Let's see if there's a log file we want to write to.
@@ -128,15 +163,26 @@ Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
     if (pos != strlen(option)) {
       if (strncmp(option, "file", 4) == 0) {
         char *file = option + pos + 1;
-        printf("Writing output to file: %s\n", file);
+        fprintf(stderr, "mlogagent: Writing output to file: %s\n", file);
         fout = fopen(file, "w");
+      } else if (strncmp(option, "config", 6) == 0) {
+        char *file = option + pos + 1;
+        config = LoadConfig(file);
+        fprintf(stderr, "mlogagent: Loading config from file: %s\n", file);
       } else {
-        printf("Unrecognized option: %s\n", option);
+        fprintf(stderr, "mlogagent: Unrecognized option: %s\n", option);
       }
     }
 
     option = strtok(NULL, ",");
   }
+  if (config == NULL) {
+    fprintf(stderr, "mlogagent: Must specify a config file with config parameter.\n");
+    fclose(fout);
+    return JNI_ERR;
+  }
+
+  fprintf(stderr, "mlogagent: Loaded agent\n");
 
   // Get an env object.
   jvmtiEnv *env;

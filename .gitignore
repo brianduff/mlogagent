@@ -1,2 +1,6 @@
 classes
 *.dylib
+hs_err_*.log
+a.out
+*.dSYM
+testmain

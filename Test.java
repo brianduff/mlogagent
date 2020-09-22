@@ -13,7 +13,7 @@ public class Test {
       if (i % 2 == 0) {
         someMethod(new RealFile("" + i));
       } else {
-        anotherMethod(new RealFile(" " + i));
+        anotherMethod(0, new RealFile(" " + i));
       }
     }
   }
@@ -22,7 +22,7 @@ public class Test {
     return "Hello " + file.getPath();
   }
 
-  public String anotherMethod(VirtualFile file) {
+  public String anotherMethod(int random, VirtualFile file) {
     return "Goodbye " + file.getPath();
   }
 
@@ -46,5 +46,6 @@ public class Test {
     public String toString() {
       return getPath();
     }
+
   }
 }

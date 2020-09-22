@@ -1,0 +1,27 @@
+{
+  "tasks": [
+    {
+      "type": "shell",
+      "label": "Build",
+      "command": "/usr/bin/gcc",
+      "args": [
+        "-g",
+        "config.c",
+        "testmain.c",
+        "-o",
+        "${workspaceFolder}/testmain"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$gcc"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ],
+  "version": "2.0.0"
+}
