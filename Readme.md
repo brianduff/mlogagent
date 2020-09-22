@@ -34,3 +34,47 @@ java -agentpath:/Users/bduff/Documents/Development/mlogagent/libmlogagent.dylib=
 
 The agent is configured by a config file. See `test.conf` and `intellij.conf` for some examples. The config file looks a lot like a yaml file, but it has an extremely barebones parser (see `config.c`), so be careful about your syntax. For example, the indent level *must* be 4 spaces exactly. It's best to copy an existing config file.
 
+Here's what the test.conf file looks like. It attaches to two methods in one class, using default behavior for one of them, and custom behavior for the other.
+
+```yaml
+# The name of a class to attach to, in JVM (slash separated) format.
+- frodo/Test
+    # The name and JVM type signature of a method to attach to.
+    # When this method is called, we'll log and print the toString() method of its first parameter.
+    - someMethod(Lfrodo/Test$VirtualFile;)Ljava/lang/String;
+
+    # Another method, demonstrating custom options
+    - anotherMethod(ILfrodo/Test$VirtualFile;)Ljava/lang/String;
+        # By default, when we hit the method breakpoint, we'll log the first method parameter (index 1)
+        # You can override this with the param option
+        - param: 2
+        # By default, when we hit the method breakpoint, we'll call toString() on one of the method
+        # parameters. You can override this to call a different method with the displayMethod
+        # parameter. The method must take no arguments and return a java.lang.String.
+        - displayMethod: getPath
+        # If you want to, you can display a miniature stack trace when the breakpoint is hit using
+        # the showTrace parameter. By default, we don't do this.
+        - showTrace: true
+```
+
+Here's what the output looks like:
+
+```
+someMethod: Hello
+someMethod: World
+someMethod: 0
+anotherMethod:  1
+  trace: <- anotherMethod<- run<- main
+someMethod: 2
+anotherMethod:  3
+  trace: <- anotherMethod<- run<- main
+someMethod: 4
+anotherMethod:  5
+  trace: <- anotherMethod<- run<- main
+someMethod: 6
+anotherMethod:  7
+  trace: <- anotherMethod<- run<- main
+someMethod: 8
+anotherMethod:  9
+  trace: <- anotherMethod<- run<- main
+```
