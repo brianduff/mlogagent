@@ -96,3 +96,7 @@ someMethod: 9
 ## TODO
 
 rewrite this whole thing in rust, because it's pretty disgusting with its yucky hand rolled yaml parser 'n all.
+
+Investigate what the performance of this is like if it uses jpda / jdwp instead of jvmti. 
+
+Turn this into a general purpose logging debugger. Like `System.out.println()` debugging? You'll love this :)
