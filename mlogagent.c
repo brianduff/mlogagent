@@ -51,20 +51,26 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
     return;
   }
 
-  char *methodToCall = "toString";
-  if (methodConfig->displayMethod != NULL) {
-    methodToCall = methodConfig->displayMethod;
+  jstring result;
+  if (methodConfig->staticDisplayClass != NULL) {
+    fprintf(stderr, "I'm here somehow and staticDisplayClass is %s\n", methodConfig->staticDisplayClass);
+    jclass clazz = (*jni)->FindClass(jni, methodConfig->staticDisplayClass);
+    jmethodID method = (*jni)->GetStaticMethodID(jni, clazz, methodConfig->displayMethod->name, methodConfig->displayMethod->signature);
+    result = (jstring) (*jni)->CallStaticObjectMethod(jni, clazz, method, the_parameter);
+    (*jni)->DeleteLocalRef(jni, clazz);
+  } else {
+    jclass clazz = (*jni)->GetObjectClass(jni, the_parameter);
+    jmethodID method = (*jni)->GetMethodID(jni, clazz, methodConfig->displayMethod->name, methodConfig->displayMethod->signature);
+    result = (jstring) (*jni)->CallObjectMethod(jni, the_parameter, method);
+    (*jni)->DeleteLocalRef(jni, clazz);
   }
-  jclass clazz = (*jni)->GetObjectClass(jni, the_parameter);
-  jmethodID tostring_method = (*jni)->GetMethodID(jni, clazz, methodToCall, "()Ljava/lang/String;");
 
-  jstring result = (jstring) (*jni)->CallObjectMethod(jni, the_parameter, tostring_method);
   if (result == NULL) {
-    fprintf(fout, "%s: null\n", methodConfig->name);
+    fprintf(fout, "%s: null\n", methodConfig->method->name);
   } else {
     jboolean isCopy;
     const char *converted = (*jni)->GetStringUTFChars(jni, result, &isCopy);
-    fprintf(fout, "%s: %s\n", methodConfig->name, converted);
+    fprintf(fout, "%s: %s\n", methodConfig->method->name, converted);
     (*jni)->ReleaseStringUTFChars(jni, result, converted);
   }
   
@@ -90,22 +96,19 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
   }
 
   fflush(fout);
- 
-  (*jni)->DeleteLocalRef(jni, clazz);
-
 }
 
 // Attach a breakpoint to configured methods
 void attachMethodBreakpoints(jvmtiEnv *jvmti_env, JNIEnv *jni, jclass clazz, ClassConfig *classConfig) {
   MethodConfig *methodConfig = classConfig->method_list;
   while (methodConfig != NULL) {
-    jmethodID mid = (*jni)->GetMethodID(jni, clazz, methodConfig->name, methodConfig->signature);
+    jmethodID mid = (*jni)->GetMethodID(jni, clazz, methodConfig->method->name, methodConfig->method->signature);
     methodConfig->runtimeData = mid;
     if (mid != NULL) {
       assert(JVMTI_ERROR_NONE == (*jvmti_env)->SetBreakpoint(jvmti_env, mid, 0));
       // printf("Set breakpoint for %s.%s%s\n", classConfig->name, methodConfig->name, methodConfig->signature);
     } else {
-      fprintf(stderr, "mlogagent: Can't find the method: %s.%s%s\n", classConfig->name, methodConfig->name, methodConfig->signature);
+      fprintf(stderr, "mlogagent: Can't find the method: %s.%s%s\n", classConfig->name, methodConfig->method->name, methodConfig->method->signature);
     }
 
     methodConfig = methodConfig->next;
@@ -156,8 +159,10 @@ Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
   fout = stdout;
 
   // Let's see if there's a log file we want to write to.
+  fprintf(stderr, "mlogagent: Got options %s\n", options);
   char *option = strtok(options, ",");
   while (option != NULL) {
+    fprintf(stderr, "mlogagent: options %s\n", option);
     // Find the =
     size_t pos = strcspn(option, "=");
     if (pos != strlen(option)) {

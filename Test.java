@@ -10,10 +10,12 @@ public class Test {
     System.out.println(someMethod(new RealFile("World")));
 
     for (int i = 0; i < 10; i++) {
-      if (i % 2 == 0) {
+      if (i % 3 == 0) {
         someMethod(new RealFile("" + i));
-      } else {
+      } else if (i % 3 == 1) {
         anotherMethod(0, new RealFile(" " + i));
+      } else {
+        aThirdMethod(0, new RealFile(" " + i));
       }
     }
   }
@@ -24,6 +26,10 @@ public class Test {
 
   public String anotherMethod(int random, VirtualFile file) {
     return "Goodbye " + file.getPath();
+  }
+
+  public String aThirdMethod(int random, VirtualFile file) {
+    return "The third method " + file.getPath();
   }
 
   private abstract static class VirtualFile {
@@ -47,5 +53,9 @@ public class Test {
       return getPath();
     }
 
+  }
+
+  public static String printThingy(VirtualFile f) {
+    return "A thingy was called";
   }
 }

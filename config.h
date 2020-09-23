@@ -3,18 +3,22 @@
 
 #include <stdbool.h>
 
-// Configuration for a method breakpoint
-typedef struct MethodConfig {
+typedef struct Method {
   // The name of the method
   char *name;
   // The signature of the method in JVM format
   char *signature;
+} Method;
+
+// Configuration for a method breakpoint
+typedef struct MethodConfig {
+  Method *method;
   // The position of the parameter to write out.
   int parameterPosition;
   // The method to call on the parameter to display. 
-  // This method must take no arguments, and must return a string.
-  // If NULL, a default will be used.
-  char *displayMethod;
+  Method *displayMethod;
+  // The class on which to call a static display method.
+  char *staticDisplayClass;
   // If true, show a stack trace when logging this method.
   bool showTrace;
 
@@ -43,6 +47,9 @@ typedef struct Config {
   ClassConfig *class_list;
 
   bool runtime_all_attached;
+
+  char *defaultDisplayMethodName;
+  char *defaultDisplayMethodSig;
 
 } Config;
 
