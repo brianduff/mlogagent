@@ -123,6 +123,8 @@ bool processMethodProp(ParseState *parseState, Config *config, char *line) {
 
     displayMethod->name = methodName;
     parseState->current_method->staticDisplayClass = className;
+  } else {
+    fprintf(stderr, "Warning: unrecognized property for method: %s\n", key);
   }
 
   return true;
