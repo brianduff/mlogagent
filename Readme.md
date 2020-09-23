@@ -95,7 +95,7 @@ someMethod: 9
 
 ## IntelliJ Example
 
-This is a config file I wrote to monitor various local filesystem things that Android Studio does. To turn it on, compile the code as shown above (or grab a [precompiled release](https://github.com/brianduff/mlogagent/releases)), then edit the [studio.vmoptions](https://developer.android.com/studio/intro/studio-config#customize_vm) file to add a line like this (mac - you'd use .so instead of .dylib for other platforms):
+[intellij.conf](https://github.com/brianduff/mlogagent/blob/master/intellij.conf) is a config file I wrote to monitor various local filesystem things that Android Studio does. To turn it on, compile the code as shown above (or grab a [precompiled release](https://github.com/brianduff/mlogagent/releases)), then edit the [studio.vmoptions](https://developer.android.com/studio/intro/studio-config#customize_vm) file to add a line like this (mac - you'd use .so instead of .dylib for other platforms):
 
 ```
 -agentpath:/Users/bduff/Documents/Development/mlogagent/libmlogagent.dylib=file=/tmp/out.txt,config=/Users/bduff/Documents/Development/mlogagent/intellij.conf
