@@ -93,6 +93,16 @@ aThirdMethod: [ 8,  8,  8]
 someMethod: 9
 ```
 
+## IntelliJ Example
+
+This is a config file I wrote to monitor various local filesystem things that Android Studio does. To turn it on, compile the code as shown above (or grab a [precompiled release](https://github.com/brianduff/mlogagent/releases)), then edit the [studio.vmoptions](https://developer.android.com/studio/intro/studio-config#customize_vm) file to add a line like this (mac - you'd use .so instead of .dylib for other platforms):
+
+```
+-agentpath:/Users/bduff/Documents/Development/mlogagent/libmlogagent.dylib=file=/tmp/out.txt,config=/Users/bduff/Documents/Development/mlogagent/intellij.conf
+```
+
+You'll need to update those absolute paths to make them correct for your computer. It'll log output to `/tmp/out.txt'. Note that because of the way the agent works, you won't be able to attach a debugger to the process while this agent is running, so you'll need to disable the agentlib if you want to use a remote debugger.
+
 ## TODO
 
 rewrite this whole thing in rust, because it's pretty disgusting with its yucky hand rolled yaml parser 'n all.
