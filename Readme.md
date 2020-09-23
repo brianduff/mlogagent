@@ -46,14 +46,25 @@ Here's what the test.conf file looks like. It attaches to two methods in one cla
     # Another method, demonstrating custom options
     - anotherMethod(ILfrodo/Test$VirtualFile;)Ljava/lang/String;
         # By default, when we hit the method breakpoint, we'll log the first method parameter (index 1)
-        # You can override this with the param option
+        # You can override this with the param property
         - param: 2
         # By default, when we hit the method breakpoint, we'll call toString() on one of the method
         # parameters. You can override this to call a different method with the displayMethod
-        # parameter. The method must take no arguments and return a java.lang.String.
+        # property. The method must take no arguments and return a java.lang.String.
         - displayMethod: getPath
         # If you want to, you can display a miniature stack trace when the breakpoint is hit using
-        # the showTrace parameter. By default, we don't do this.
+        # the showTrace property. By default, we don't do this.
+        - showTrace: true
+    
+    - aThirdMethod(I[Lfrodo/Test$VirtualFile;)Ljava/lang/String;
+        - param: 2
+        # Sometimes the method parameter you care about doesn't have a convenient method you can
+        # call to convert it into a string. In these cases, it can be useful to call a static
+        # method instead, passing in the parameter, and have it return a String to display instead.
+        # Arrays are a really good example of this. Here's how to do this using the `displayMethodStatic`
+        # property. The static method must take the parameter you've selected as its only argument,
+        # and must return a String.
+        - displayMethodStatic: java/util/Arrays.toString([Ljava/lang/Object;)Ljava/lang/String;
         - showTrace: true
 ```
 
@@ -61,22 +72,25 @@ Here's what the output looks like:
 
 ```
 someMethod: Hello
+Hello Hello
 someMethod: World
+Hello World
 someMethod: 0
 anotherMethod:  1
   trace: <- anotherMethod<- run<- main
-someMethod: 2
-anotherMethod:  3
+aThirdMethod: [ 2,  2,  2]
+  trace: <- aThirdMethod<- run<- main
+someMethod: 3
+anotherMethod:  4
   trace: <- anotherMethod<- run<- main
-someMethod: 4
-anotherMethod:  5
-  trace: <- anotherMethod<- run<- main
+aThirdMethod: [ 5,  5,  5]
+  trace: <- aThirdMethod<- run<- main
 someMethod: 6
 anotherMethod:  7
   trace: <- anotherMethod<- run<- main
-someMethod: 8
-anotherMethod:  9
-  trace: <- anotherMethod<- run<- main
+aThirdMethod: [ 8,  8,  8]
+  trace: <- aThirdMethod<- run<- main
+someMethod: 9
 ```
 
 ## TODO

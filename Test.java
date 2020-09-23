@@ -15,7 +15,7 @@ public class Test {
       } else if (i % 3 == 1) {
         anotherMethod(0, new RealFile(" " + i));
       } else {
-        aThirdMethod(0, new RealFile(" " + i));
+        aThirdMethod(0, new VirtualFile[] { new RealFile(" " + i), new RealFile(" " + i), new RealFile(" " + i) });
       }
     }
   }
@@ -28,8 +28,8 @@ public class Test {
     return "Goodbye " + file.getPath();
   }
 
-  public String aThirdMethod(int random, VirtualFile file) {
-    return "The third method " + file.getPath();
+  public String aThirdMethod(int random, VirtualFile[] file) {
+    return "The third method ";
   }
 
   private abstract static class VirtualFile {

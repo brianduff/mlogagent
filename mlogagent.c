@@ -53,7 +53,6 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
 
   jstring result;
   if (methodConfig->staticDisplayClass != NULL) {
-    fprintf(stderr, "I'm here somehow and staticDisplayClass is %s\n", methodConfig->staticDisplayClass);
     jclass clazz = (*jni)->FindClass(jni, methodConfig->staticDisplayClass);
     jmethodID method = (*jni)->GetStaticMethodID(jni, clazz, methodConfig->displayMethod->name, methodConfig->displayMethod->signature);
     result = (jstring) (*jni)->CallStaticObjectMethod(jni, clazz, method, the_parameter);
