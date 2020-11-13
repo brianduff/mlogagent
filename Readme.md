@@ -2,6 +2,8 @@ A small example of a [JMVTI](https://docs.oracle.com/javase/8/docs/platform/jvmt
 
 ## Compiling
 
+If you're on mac, you can just grab a binary from the releases thingy on the right -->.
+
 Compile the native agent like this. Fix the `-I` paths to point to the JVM include dir on your platform:
 
 ```
