@@ -2,7 +2,7 @@ A small example of a [JMVTI](https://docs.oracle.com/javase/8/docs/platform/jvmt
 
 ## Compiling
 
-If you're on mac, you can just grab a binary from the releases thingy on the right -->.
+If you're on mac, you can just grab a binary from [here](https://github.com/brianduff/mlogagent/releases/tag/0.0.1)
 
 Compile the native agent like this. Fix the `-I` paths to point to the JVM include dir on your platform:
 
