@@ -83,12 +83,23 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
     err = (*jvmti_env)->GetStackTrace(jvmti_env, thread, 0, 8, frames, &count);
     if (err == JVMTI_ERROR_NONE && count >= 1) {
       char *methodName;
+      jclass declaringClass;
       fprintf(fout, "  trace: ");
+
+      // Consider doing this higher up if it's slow.
+      jclass clzclz = (*jni)->FindClass(jni, "java/lang/Class");
+      jmethodID mid_getName = (*jni)->GetMethodID(jni, clzclz, "getName", "()Ljava/lang/String;");
+
       for (int i = 0; i < count; i++) {
-        err = (*jvmti_env)->GetMethodName(jvmti_env, frames[i].method, &methodName, NULL, NULL);
-        if (err == JVMTI_ERROR_NONE) {
-          fprintf(fout, "<- %s", methodName);
-        }
+        assert(JVMTI_ERROR_NONE == (*jvmti_env)->GetMethodName(jvmti_env, frames[i].method, &methodName, NULL, NULL));
+        assert(JVMTI_ERROR_NONE == (*jvmti_env)->GetMethodDeclaringClass(jvmti_env, frames[i].method, &declaringClass));
+
+        jstring name = (*jni)->CallObjectMethod(jni, declaringClass, mid_getName);
+        jboolean isCopy;
+        const char *className = (*jni)->GetStringUTFChars(jni, name, &isCopy);
+        fprintf(fout, "<- %s.%s", className, methodName);
+
+        (*jni)->ReleaseStringUTFChars(jni, name, className);
       }
       fprintf(fout, "\n");
     }
