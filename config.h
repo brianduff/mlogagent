@@ -3,24 +3,27 @@
 
 #include <stdbool.h>
 
-typedef struct Method {
+typedef struct NameAndSignature {
   // The name of the method
   char *name;
   // The signature of the method in JVM format
   char *signature;
-} Method;
+} NameAndSignature;
 
 // Configuration for a method breakpoint
 typedef struct MethodConfig {
-  Method *method;
+  NameAndSignature *method;
   // The position of the parameter to write out.
   int parameterPosition;
   // The method to call on the parameter to display. 
-  Method *displayMethod;
+  NameAndSignature *displayMethod;
   // The class on which to call a static display method.
   char *staticDisplayClass;
   // If true, show a stack trace when logging this method.
   bool showTrace;
+
+  // The name of a field to display.
+  NameAndSignature *displayField;
 
   struct MethodConfig *next;
 

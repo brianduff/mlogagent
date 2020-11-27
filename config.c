@@ -19,6 +19,61 @@ typedef struct ParseState {
   MethodConfig *current_method;
 } ParseState;
 
+void PrintNameAndSignature(NameAndSignature *nas) {
+  if (nas == NULL) {
+    fprintf(stderr, "NULL,");
+  } else {
+    fprintf(stderr, "{name = \"%s\", signature = \"%s\"},\n", nas->name, nas->signature);
+  }
+}
+
+void PrintMethodConfig(MethodConfig *methodConfig) {
+  fprintf(stderr, "      {\n");
+  fprintf(stderr, "        method = ");
+  PrintNameAndSignature(methodConfig->method);
+  fprintf(stderr, "        parameterPosition = %d,\n", methodConfig->parameterPosition);
+  fprintf(stderr, "        displayMethod = ");
+  PrintNameAndSignature(methodConfig->displayMethod);
+  fprintf(stderr, "        staticDisplayClass = \"%s\",\n", methodConfig->staticDisplayClass);
+  fprintf(stderr, "        showTrace = %d,\n", methodConfig->showTrace);
+  fprintf(stderr, "        displayField = ");
+  PrintNameAndSignature(methodConfig->displayField);
+  fprintf(stderr, "\n");
+  fprintf(stderr, "      },\n");
+}
+
+
+void PrintClassConfig(ClassConfig *clsConfig) {
+  fprintf(stderr, "  {\n");
+  fprintf(stderr, "    name = \"%s\",\n", clsConfig->name);
+  fprintf(stderr, "    runtime_attached = %d,\n", clsConfig->runtime_attached);
+  fprintf(stderr, "    method_list = [\n");
+  MethodConfig *methodConfig = clsConfig->method_list;
+  while (methodConfig != NULL) {
+    PrintMethodConfig(methodConfig);
+    methodConfig = methodConfig->next;
+  }
+  fprintf(stderr, "    ],\n");
+  fprintf(stderr, "  },\n");
+}
+
+void PrintConfig(Config *config) {
+  fprintf(stderr, "{\n");
+  fprintf(stderr, "  classes: [\n");
+
+  ClassConfig *clsConfig = config->class_list;
+  while (clsConfig != NULL) {
+    PrintClassConfig(clsConfig);
+    clsConfig = clsConfig->next;
+  }
+
+  fprintf(stderr, "  ],\n");
+  fprintf(stderr, "  runtime_all_attached = %d,\n", config->runtime_all_attached);
+  fprintf(stderr, "  defaultDisplayMethodName = \"%s\",\n", config->defaultDisplayMethodName);
+  fprintf(stderr, "  defaultDisplayMethodSig = \"%s\",\n", config->defaultDisplayMethodSig);
+  fprintf(stderr, "}\n");
+}
+
 
 char *trim(char *text, int *leading_spaces) {
   *leading_spaces = 0;
@@ -39,30 +94,50 @@ char *trim(char *text, int *leading_spaces) {
   return text;
 }
 
-bool parseMethod(char *text, Method *method) {
+// A name and signature is either:
+//    someMethod(foo)bar
+//    someField:bar
+bool parseNameAndSignature(char *text, NameAndSignature *nameAndSig) {
+  // First try breaking up by colon.
+  char *name;
+  char *sig;
+  bool is_method = false;
+
+  name = strtok(text, ":");
+  if (name != NULL) {
+    sig = strtok(NULL, ":");
+    if (sig == NULL) {
+      // Proceed to try as a method.
+      name = NULL;
+    }
+  }
+  
+  if (name == NULL) {
     // Break up by parenthesis
-  char *methodName = strtok(text, "(");
-  if (methodName == NULL) {
-    fprintf(stderr, "Can't find method name\n");
-    return false;
+    name = strtok(text, "(");
+    if (name == NULL) {
+      fprintf(stderr, "Can't find method name in %s\n", text);
+      return false;
+    }
+
+    sig = strtok(NULL, "(");
+    if (sig == NULL) {
+      fprintf(stderr, "Can't find method signature in %s\n", text);
+      return false;
+    }
+    is_method = true;
   }
 
-  // If the method name contains a period, then it's a static method, and we break it up to
+  nameAndSig->name = (char *) malloc(sizeof(char) * (strlen(name) + 1));
+  strcpy(nameAndSig->name, name);
 
-
-  char *methodSignature = strtok(NULL, "(");
-  if (methodSignature == NULL) {
-    fprintf(stderr, "Can't find method signature\n");
-    return false;
+  nameAndSig->signature = (char *) malloc(sizeof(char) * (strlen(sig) + (is_method ? 2 : 1)));
+  char *startOfSig = nameAndSig->signature;
+  if (is_method) {
+    nameAndSig->signature[0] = '(';
+    startOfSig = startOfSig + 1;
   }
-
-  method->name = (char *) malloc(sizeof(char) * (strlen(methodName) + 1));
-  strcpy(method->name, methodName);
-
-  method->signature = (char *) malloc(sizeof(char) * (strlen(methodSignature) + 2));
-  method->signature = (char *) malloc(sizeof(char) * (strlen(methodSignature) + 2));
-  method->signature[0] = '(';
-  strcpy(method->signature + 1, methodSignature);
+  strcpy(startOfSig, sig);
 
   return true;
 }
@@ -84,7 +159,7 @@ bool processMethodProp(ParseState *parseState, Config *config, char *line) {
   }
 
   
-  char *value = strtok(NULL, ":");
+  char *value = strtok(NULL, "");
   if (value == NULL) {
     fprintf(stderr, "Expecting value\n");
     return false;
@@ -94,7 +169,7 @@ bool processMethodProp(ParseState *parseState, Config *config, char *line) {
   value = trim(value, &ignored);
 
   if (strcmp("displayMethod", key) == 0) {
-    Method *displayMethod = parseState->current_method->displayMethod;
+    NameAndSignature *displayMethod = parseState->current_method->displayMethod;
     displayMethod->name = (char *) malloc(sizeof(char) * (strlen(value) + 1));
     displayMethod->signature = "()Ljava/lang/String;";
     strcpy(displayMethod->name, value);
@@ -108,8 +183,8 @@ bool processMethodProp(ParseState *parseState, Config *config, char *line) {
     int param = atoi(value);
     parseState->current_method->parameterPosition = param;
   } else if (strcmp("displayMethodStatic", key) == 0) {
-    Method *displayMethod = parseState->current_method->displayMethod;
-    if (!parseMethod(value, displayMethod)) {
+    NameAndSignature *displayMethod = parseState->current_method->displayMethod;
+    if (!parseNameAndSignature(value, displayMethod)) {
       return false;
     }
 
@@ -123,6 +198,11 @@ bool processMethodProp(ParseState *parseState, Config *config, char *line) {
 
     displayMethod->name = methodName;
     parseState->current_method->staticDisplayClass = className;
+  } else if (strcmp("displayField", key) == 0) {
+    parseState->current_method->displayField = (NameAndSignature *) malloc(sizeof(NameAndSignature));
+    if (!parseNameAndSignature(value, parseState->current_method->displayField)) {
+      return false;
+    }
   } else {
     fprintf(stderr, "Warning: unrecognized property for method: %s\n", key);
   }
@@ -141,9 +221,9 @@ bool processMethod(ParseState *parseState, Config *config, char *line) {
   // Swallow "- "
   line += 2;
 
-  Method *method = (Method *) malloc(sizeof(Method));
+  NameAndSignature *method = (NameAndSignature *) malloc(sizeof(NameAndSignature));
 
-  bool result = parseMethod(line, method);
+  bool result = parseNameAndSignature(line, method);
   if (!result) {
     free(method);
     return false;
@@ -155,10 +235,11 @@ bool processMethod(ParseState *parseState, Config *config, char *line) {
   parseState->current_class->method_list = methodConfig;
   parseState->current_method = methodConfig;
 
-  methodConfig->displayMethod = (Method *) malloc(sizeof(Method));
+  methodConfig->displayMethod = (NameAndSignature *) malloc(sizeof(NameAndSignature));
   methodConfig->displayMethod->name = config->defaultDisplayMethodName;
   methodConfig->displayMethod->signature = config->defaultDisplayMethodSig;
   methodConfig->staticDisplayClass = NULL;
+  methodConfig->displayField = NULL;
   methodConfig->showTrace = false;
   methodConfig->parameterPosition = 1;
 
@@ -246,6 +327,16 @@ void ReleaseMethods(Config *mainConfig, MethodConfig *config) {
 
   free(config->staticDisplayClass);
 
+  if (config->displayField != NULL) {
+    if (config->displayField->name != NULL) {
+      free(config->displayField->name);
+    }
+    if (config->displayField->signature != NULL) {
+      free(config->displayField->signature);
+    }
+    free(config->displayField);
+  }
+
   free(config);
 }
 
@@ -293,6 +384,8 @@ Config *LoadConfig(const char *filename) {
   }
 
   fclose(fp);
+
+  PrintConfig(config);
 
   return config;
 }
