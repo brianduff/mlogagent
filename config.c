@@ -36,6 +36,7 @@ void PrintMethodConfig(MethodConfig *methodConfig) {
   PrintNameAndSignature(methodConfig->displayMethod);
   fprintf(stderr, "        staticDisplayClass = \"%s\",\n", methodConfig->staticDisplayClass);
   fprintf(stderr, "        showTrace = %d,\n", methodConfig->showTrace);
+  fprintf(stderr, "        showAllParams = %d,\n", methodConfig->showAllParams);
   fprintf(stderr, "        displayField = ");
   PrintNameAndSignature(methodConfig->displayField);
   fprintf(stderr, "\n");
@@ -179,6 +180,12 @@ bool processMethodProp(ParseState *parseState, Config *config, char *line) {
     } else {
       parseState->current_method->showTrace = false;
     }
+  } else if (strcmp("showAllParams", key) == 0) {
+    if (strcmp("true", value) == 0) {
+      parseState->current_method->showAllParams = true;
+    } else {
+      parseState->current_method->showAllParams = false;
+    }
   } else if (strcmp("param", key) == 0) {
     int param = atoi(value);
     parseState->current_method->parameterPosition = param;
@@ -241,9 +248,8 @@ bool processMethod(ParseState *parseState, Config *config, char *line) {
   methodConfig->staticDisplayClass = NULL;
   methodConfig->displayField = NULL;
   methodConfig->showTrace = false;
+  methodConfig->showAllParams = false;
   methodConfig->parameterPosition = 1;
-
-  fprintf(stderr, "Class: %s. Method: %s\n", parseState->current_class->name, methodConfig->method->name);
 
   return true;
 }

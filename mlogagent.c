@@ -165,8 +165,8 @@ void attachMethodBreakpoints(jvmtiEnv *jvmti_env, JNIEnv *jni, jclass clazz, Cla
     jmethodID mid = (*jni)->GetMethodID(jni, clazz, methodConfig->method->name, methodConfig->method->signature);
     methodConfig->runtimeData = mid;
     if (mid != NULL) {
+      printf("Setting breakpoint for %s.%s%s\n", classConfig->name, methodConfig->method->name, methodConfig->method->signature);
       checkError((*jvmti_env)->SetBreakpoint(jvmti_env, mid, 0));
-      printf("Set breakpoint for %s.%s%s\n", classConfig->name, methodConfig->method->name, methodConfig->method->signature);
     } else {
       fprintf(stderr, "mlogagent: Can't find the method: %s.%s%s\n", classConfig->name, methodConfig->method->name, methodConfig->method->signature);
     }
@@ -177,32 +177,27 @@ void attachMethodBreakpoints(jvmtiEnv *jvmti_env, JNIEnv *jni, jclass clazz, Cla
 
 // Called when a class is loaded.
 void JNICALL ClassPrepareCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread, jclass klass) {
-  // Avoid re-entrancy
-  if (in_prepare) {
-    return;
-  }
-
   if (config->runtime_all_attached) {
     return;
   }
 
-  in_prepare = true;
+  // We could probably cache this?
+  jclass clzclz = (*jni)->FindClass(jni, "java/lang/Class");
+  jmethodID get_name = (*jni)->GetMethodID(jni, clzclz, "getName", "()Ljava/lang/String;");
+  jstring class_name = (*jni)->CallObjectMethod(jni, klass, get_name);
+  jboolean isCopy;
+  const char *className = (*jni)->GetStringUTFChars(jni, class_name, &isCopy);
 
-  // Try to find all classes we want to attach to
+
   ClassConfig *classConfig = config->class_list;
   bool allAttached = true;
   while (classConfig != NULL) {
     if (!classConfig->runtime_attached) {
-      // Try to find the class to attach to
-      jclass clazz = (*jni)->FindClass(jni, classConfig->name);
-      (*jni)->ExceptionClear(jni);
-
-      if (clazz == NULL) {
-        allAttached = false;
-      } else {
-        attachMethodBreakpoints(jvmti_env, jni, clazz, classConfig);
+      if (strcmp(className, classConfig->name) == 0) {
+        attachMethodBreakpoints(jvmti_env, jni, klass, classConfig);
         classConfig->runtime_attached = true;
-        (*jni)->DeleteLocalRef(jni, clazz);
+      } else {
+        allAttached = false;
       }
     }
     classConfig = classConfig->next;
@@ -211,9 +206,9 @@ void JNICALL ClassPrepareCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thre
     config->runtime_all_attached = true;
   }
 
-  in_prepare = false;
+  (*jni)->ReleaseStringUTFChars(jni, class_name, className);
+  (*jni)->DeleteLocalRef(jni, clzclz);
 }
-
 
 JNIEXPORT jint JNICALL 
 Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {

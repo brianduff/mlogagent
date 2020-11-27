@@ -25,6 +25,9 @@ typedef struct MethodConfig {
   // The name of a field to display.
   NameAndSignature *displayField;
 
+  // If true, show all parameters for this method.
+  bool showAllParams;
+
   struct MethodConfig *next;
 
   // Used at runtime.
