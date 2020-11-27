@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <sys/time.h>
+#include <time.h>
 
 #include "config.h"
 
@@ -13,6 +15,20 @@ FILE *fout;
 Config *config;
 
 bool in_prepare = false;
+
+// Store the formatted string of time in the output
+void print_time(FILE *out) {
+  struct timeval time;
+  gettimeofday(&time, NULL);
+
+  time_t rawtime = time.tv_sec;
+  struct tm * timeinfo;
+  timeinfo = localtime(&rawtime);
+
+  int millis = time.tv_usec / 1000;
+
+  fprintf(out, "%02d:%02d:%02d.%03d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec, millis);
+}
 
 void findConfig(jmethodID method, ClassConfig **classConfigReturn, MethodConfig **methodConfigReturn) {
   // Figure out which class and method we're in.
@@ -78,8 +94,6 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
     jclass strClazz = (*jni)->FindClass(jni, "java/lang/String");
     jmethodID strValueOfMethod = (*jni)->GetStaticMethodID(jni, strClazz, "valueOf", "(Ljava/lang/Object;)Ljava/lang/String;");
     result = (jstring) (*jni)->CallStaticObjectMethod(jni, strClazz, strValueOfMethod, value);
-
-//    fprintf(stderr, "mlogagent: Don't know how to handle it yet, but got displayField %s:%s\n", methodConfig->displayField->name, methodConfig->displayField->signature);
   } else {
     if (methodConfig->staticDisplayClass != NULL) {
       jclass clazz = (*jni)->FindClass(jni, methodConfig->staticDisplayClass);
@@ -94,16 +108,16 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
     }
   }
 
+  print_time(fout);
   if (result == NULL) {
-    fprintf(fout, "%s: null\n", methodConfig->method->name);
+    fprintf(fout, " %s: null\n", methodConfig->method->name);
   } else {
     jboolean isCopy;
     const char *converted = (*jni)->GetStringUTFChars(jni, result, &isCopy);
-    fprintf(fout, "%s: %s\n", methodConfig->method->name, converted);
+    fprintf(fout, " %s: %s\n", methodConfig->method->name, converted);
     (*jni)->ReleaseStringUTFChars(jni, result, converted);
   }
   
-
   // Show a stack trace if we've been asked to.
   if (methodConfig->showTrace) {
     jvmtiFrameInfo frames[20];

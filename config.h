@@ -64,3 +64,10 @@ Config *LoadConfig(const char *filename);
 void ReleaseConfig(Config *config);
 
 #endif /* !CONFIG_H_SEEN */
+
+  // struct timeval time;
+  // struct timezone tz;
+  // gettimeofday(&time, &tz);
+  // structtime_t t = localtime(time.tv_sec);
+
+  // fprintf(out, "%d:%d:%d.%d", t.tm_hour, time.tv_sec->tm_min, time.tv_sec->tm_sec);
