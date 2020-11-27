@@ -162,6 +162,8 @@ bool processMethod(ParseState *parseState, Config *config, char *line) {
   methodConfig->showTrace = false;
   methodConfig->parameterPosition = 1;
 
+  fprintf(stderr, "Class: %s. Method: %s\n", parseState->current_class->name, methodConfig->method->name);
+
   return true;
 }
 

@@ -36,7 +36,8 @@ void findConfig(jmethodID method, ClassConfig **classConfigReturn, MethodConfig 
 void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread, jmethodID method, jlocation location) {
   ClassConfig *classConfig = NULL;
   MethodConfig *methodConfig = NULL;
-
+//  fprintf(stderr, "mlogagent: breakpoint\n.");
+  
   findConfig(method, &classConfig, &methodConfig);
   if (classConfig == NULL || methodConfig == NULL) {
     fprintf(stderr, "mlogagent: Hit unknown breakpoint\n.");
@@ -76,15 +77,14 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
 
   // Show a stack trace if we've been asked to.
   if (methodConfig->showTrace) {
-    jvmtiFrameInfo frames[8];
+    jvmtiFrameInfo frames[20];
     jint count;
     jvmtiError err;
 
-    err = (*jvmti_env)->GetStackTrace(jvmti_env, thread, 0, 8, frames, &count);
+    err = (*jvmti_env)->GetStackTrace(jvmti_env, thread, 0, 20, frames, &count);
     if (err == JVMTI_ERROR_NONE && count >= 1) {
       char *methodName;
       jclass declaringClass;
-      fprintf(fout, "  trace: ");
 
       // Consider doing this higher up if it's slow.
       jclass clzclz = (*jni)->FindClass(jni, "java/lang/Class");
@@ -97,7 +97,7 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
         jstring name = (*jni)->CallObjectMethod(jni, declaringClass, mid_getName);
         jboolean isCopy;
         const char *className = (*jni)->GetStringUTFChars(jni, name, &isCopy);
-        fprintf(fout, "<- %s.%s", className, methodName);
+        fprintf(fout, " at %s.%s\n", className, methodName);
 
         (*jni)->ReleaseStringUTFChars(jni, name, className);
       }
@@ -108,6 +108,13 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
   fflush(fout);
 }
 
+void checkError(jvmtiError error) {
+  if (error != JVMTI_ERROR_NONE) {
+    fprintf(stderr, "mlogagent: JVMTI error %d\n", error);
+  }
+  assert(error == JVMTI_ERROR_NONE);
+}
+
 // Attach a breakpoint to configured methods
 void attachMethodBreakpoints(jvmtiEnv *jvmti_env, JNIEnv *jni, jclass clazz, ClassConfig *classConfig) {
   MethodConfig *methodConfig = classConfig->method_list;
@@ -115,8 +122,8 @@ void attachMethodBreakpoints(jvmtiEnv *jvmti_env, JNIEnv *jni, jclass clazz, Cla
     jmethodID mid = (*jni)->GetMethodID(jni, clazz, methodConfig->method->name, methodConfig->method->signature);
     methodConfig->runtimeData = mid;
     if (mid != NULL) {
-      assert(JVMTI_ERROR_NONE == (*jvmti_env)->SetBreakpoint(jvmti_env, mid, 0));
-      // printf("Set breakpoint for %s.%s%s\n", classConfig->name, methodConfig->name, methodConfig->signature);
+      checkError((*jvmti_env)->SetBreakpoint(jvmti_env, mid, 0));
+      printf("Set breakpoint for %s.%s%s\n", classConfig->name, methodConfig->method->name, methodConfig->method->signature);
     } else {
       fprintf(stderr, "mlogagent: Can't find the method: %s.%s%s\n", classConfig->name, methodConfig->method->name, methodConfig->method->signature);
     }
@@ -151,6 +158,7 @@ void JNICALL ClassPrepareCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thre
         allAttached = false;
       } else {
         attachMethodBreakpoints(jvmti_env, jni, clazz, classConfig);
+        classConfig->runtime_attached = true;
         (*jni)->DeleteLocalRef(jni, clazz);
       }
     }
