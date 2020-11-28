@@ -6,8 +6,10 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <time.h>
+#include <stdarg.h>
 
 #include "config.h"
+#include "strutil.h"
 
 // Sorry for the disgusting use of globals.
 int registered = 0;
@@ -17,7 +19,7 @@ Config *config;
 bool in_prepare = false;
 
 // Store the formatted string of time in the output
-void print_time(FILE *out) {
+void print_time() {
   struct timeval time;
   gettimeofday(&time, NULL);
 
@@ -27,7 +29,7 @@ void print_time(FILE *out) {
 
   int millis = time.tv_usec / 1000;
 
-  fprintf(out, "%02d:%02d:%02d.%03d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec, millis);
+  buffer_append("%02d:%02d:%02d.%03d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec, millis);
 }
 
 void findConfig(jmethodID method, ClassConfig **classConfigReturn, MethodConfig **methodConfigReturn) {
@@ -45,20 +47,22 @@ void findConfig(jmethodID method, ClassConfig **classConfigReturn, MethodConfig 
     }
     classConfig = classConfig->next;
   }
-
 }
 
 // Called when a breakpoint is hit.
 void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread, jmethodID method, jlocation location) {
   ClassConfig *classConfig = NULL;
   MethodConfig *methodConfig = NULL;
-//  fprintf(stderr, "mlogagent: breakpoint\n.");
-  
+
   findConfig(method, &classConfig, &methodConfig);
   if (classConfig == NULL || methodConfig == NULL) {
     fprintf(stderr, "mlogagent: Hit unknown breakpoint\n.");
     return;
   }
+
+  buffer_reset();
+  print_time();
+  buffer_append(" %s(", methodConfig->method->name);
 
   // If the method config has a displayField, use that instead to get the "this" object.
   int parameter_pos = methodConfig->parameterPosition;
@@ -108,15 +112,15 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
     }
   }
 
-  print_time(fout);
-  if (result == NULL) {
-    fprintf(fout, " %s: null\n", methodConfig->method->name);
-  } else {
+  if (result != NULL) {
     jboolean isCopy;
     const char *converted = (*jni)->GetStringUTFChars(jni, result, &isCopy);
-    fprintf(fout, " %s: %s\n", methodConfig->method->name, converted);
+    buffer_append("%s", converted);
     (*jni)->ReleaseStringUTFChars(jni, result, converted);
   }
+  buffer_append(")");
+
+  fprintf(fout, "%s\n", buffer_get());
   
   // Show a stack trace if we've been asked to.
   if (methodConfig->showTrace) {
