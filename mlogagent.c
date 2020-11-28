@@ -1,4 +1,6 @@
 #include <jvmti.h>
+#include <jni.h>
+#include <classfile_constants.h>
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,6 +12,7 @@
 
 #include "config.h"
 #include "strutil.h"
+#include "jvmutil.h"
 
 // Sorry for the disgusting use of globals.
 int registered = 0;
@@ -49,6 +52,21 @@ void findConfig(jmethodID method, ClassConfig **classConfigReturn, MethodConfig 
   }
 }
 
+void checkError(jvmtiError error) {
+  if (error != JVMTI_ERROR_NONE) {
+    fprintf(stderr, "mlogagent: JVMTI error %d\n", error);
+  }
+  assert(error == JVMTI_ERROR_NONE);
+}
+
+
+void writeStringToBuffer(JNIEnv *jni, jobject javaString) {
+  jboolean isCopy;
+  const char *converted = (*jni)->GetStringUTFChars(jni, javaString, &isCopy);
+  buffer_append("%s", converted);
+  (*jni)->ReleaseStringUTFChars(jni, javaString, converted);
+}
+
 // Called when a breakpoint is hit.
 void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread, jmethodID method, jlocation location) {
   ClassConfig *classConfig = NULL;
@@ -64,59 +82,88 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
   print_time();
   buffer_append(" %s(", methodConfig->method->name);
 
-  // If the method config has a displayField, use that instead to get the "this" object.
-  int parameter_pos = methodConfig->parameterPosition;
-  if (methodConfig->displayField != NULL) {
-    parameter_pos = 0;
-  }
+  // If the method config has showAllParams, do special things. Could make this the default in the future.
+  if (methodConfig->showAllParams) {
+    // Get the method modifiers. If it's static, then we start counting at 0, else we start counting at 1
+    // (so as to avoid the synthetic this parameter)
+    jint modifiers;
+    (*jvmti_env)->GetMethodModifiers(jvmti_env, method, &modifiers);
 
-  // Get hold of the parameter
-  jobject the_parameter;
-  int err = (*jvmti_env)->GetLocalObject(jvmti_env, thread, 0, parameter_pos, &the_parameter);
-  if (err != JVMTI_ERROR_NONE) {
-    fprintf(stderr, "mlogagent: GetLocalObject error: %d while trying to retrieve parameter %d of %s\n", err, parameter_pos, methodConfig->method->name);
-    return;
-  }
+    int start_param = ((modifiers & JVM_ACC_STATIC) != 0) ? 0 : 1;
 
-  jstring result;
+    char *paramTypes;
+    int num_params;
+    // We should do this once when the config is loaded.
+    get_param_base_types(methodConfig->method->signature, &paramTypes, &num_params);
 
-  // If the method config has a displayField, look up and reflect that field.
-  if (methodConfig->displayField != NULL) {
-    jclass clazz = (*jni)->GetObjectClass(jni, the_parameter);
-    jfieldID fieldID = (*jni)->GetFieldID(jni, clazz, methodConfig->displayField->name, methodConfig->displayField->signature);
-    if (fieldID == NULL) {
-      (*jni)->ExceptionClear(jni);
-      fprintf(stderr, "mlogagent: Field %s:%s not found in class %s\n", methodConfig->displayField->name, methodConfig->displayField->signature, classConfig->name);
-      return;
-    }
-    jobject value = (*jni)->GetObjectField(jni, the_parameter, fieldID);
-    if (value == NULL) {
-      fprintf(stderr, "mlogagent: Field %s:%s in class %s is NULL\n", methodConfig->displayField->name, methodConfig->displayField->signature, classConfig->name);
-    }
-
-    // Now toString() the value to get a String back.
     jclass strClazz = (*jni)->FindClass(jni, "java/lang/String");
     jmethodID strValueOfMethod = (*jni)->GetStaticMethodID(jni, strClazz, "valueOf", "(Ljava/lang/Object;)Ljava/lang/String;");
-    result = (jstring) (*jni)->CallStaticObjectMethod(jni, strClazz, strValueOfMethod, value);
-  } else {
-    if (methodConfig->staticDisplayClass != NULL) {
-      jclass clazz = (*jni)->FindClass(jni, methodConfig->staticDisplayClass);
-      jmethodID method = (*jni)->GetStaticMethodID(jni, clazz, methodConfig->displayMethod->name, methodConfig->displayMethod->signature);
-      result = (jstring) (*jni)->CallStaticObjectMethod(jni, clazz, method, the_parameter);
-      (*jni)->DeleteLocalRef(jni, clazz);
-    } else {
-      jclass clazz = (*jni)->GetObjectClass(jni, the_parameter);
-      jmethodID method = (*jni)->GetMethodID(jni, clazz, methodConfig->displayMethod->name, methodConfig->displayMethod->signature);
-      result = (jstring) (*jni)->CallObjectMethod(jni, the_parameter, method);
-      (*jni)->DeleteLocalRef(jni, clazz);
-    }
-  }
 
-  if (result != NULL) {
-    jboolean isCopy;
-    const char *converted = (*jni)->GetStringUTFChars(jni, result, &isCopy);
-    buffer_append("%s", converted);
-    (*jni)->ReleaseStringUTFChars(jni, result, converted);
+
+    for (int i = 0; i < num_params; i++) {
+      jobject param;
+      // Try just unconditionally getting it as an object.
+      checkError((*jvmti_env)->GetLocalObject(jvmti_env, thread, 0, i + start_param, &param));
+      jobject str = (jstring) (*jni)->CallStaticObjectMethod(jni, strClazz, strValueOfMethod, param);
+      writeStringToBuffer(jni, str);
+
+      if (i < num_params - 1) {
+        buffer_append(", ");
+      }
+    }
+  } else {
+
+    // If the method config has a displayField, use that instead to get the "this" object.
+    int parameter_pos = methodConfig->parameterPosition;
+    if (methodConfig->displayField != NULL) {
+      parameter_pos = 0;
+    }
+
+    // Get hold of the parameter
+    jobject the_parameter;
+    int err = (*jvmti_env)->GetLocalObject(jvmti_env, thread, 0, parameter_pos, &the_parameter);
+    if (err != JVMTI_ERROR_NONE) {
+      fprintf(stderr, "mlogagent: GetLocalObject error: %d while trying to retrieve parameter %d of %s\n", err, parameter_pos, methodConfig->method->name);
+      return;
+    }
+
+    jstring result;
+
+    // If the method config has a displayField, look up and reflect that field.
+    if (methodConfig->displayField != NULL) {
+      jclass clazz = (*jni)->GetObjectClass(jni, the_parameter);
+      jfieldID fieldID = (*jni)->GetFieldID(jni, clazz, methodConfig->displayField->name, methodConfig->displayField->signature);
+      if (fieldID == NULL) {
+        (*jni)->ExceptionClear(jni);
+        fprintf(stderr, "mlogagent: Field %s:%s not found in class %s\n", methodConfig->displayField->name, methodConfig->displayField->signature, classConfig->name);
+        return;
+      }
+      jobject value = (*jni)->GetObjectField(jni, the_parameter, fieldID);
+      if (value == NULL) {
+        fprintf(stderr, "mlogagent: Field %s:%s in class %s is NULL\n", methodConfig->displayField->name, methodConfig->displayField->signature, classConfig->name);
+      }
+
+      // Now toString() the value to get a String back.
+      jclass strClazz = (*jni)->FindClass(jni, "java/lang/String");
+      jmethodID strValueOfMethod = (*jni)->GetStaticMethodID(jni, strClazz, "valueOf", "(Ljava/lang/Object;)Ljava/lang/String;");
+      result = (jstring) (*jni)->CallStaticObjectMethod(jni, strClazz, strValueOfMethod, value);
+    } else {
+      if (methodConfig->staticDisplayClass != NULL) {
+        jclass clazz = (*jni)->FindClass(jni, methodConfig->staticDisplayClass);
+        jmethodID method = (*jni)->GetStaticMethodID(jni, clazz, methodConfig->displayMethod->name, methodConfig->displayMethod->signature);
+        result = (jstring) (*jni)->CallStaticObjectMethod(jni, clazz, method, the_parameter);
+        (*jni)->DeleteLocalRef(jni, clazz);
+      } else {
+        jclass clazz = (*jni)->GetObjectClass(jni, the_parameter);
+        jmethodID method = (*jni)->GetMethodID(jni, clazz, methodConfig->displayMethod->name, methodConfig->displayMethod->signature);
+        result = (jstring) (*jni)->CallObjectMethod(jni, the_parameter, method);
+        (*jni)->DeleteLocalRef(jni, clazz);
+      }
+    }
+
+    if (result != NULL) {
+      writeStringToBuffer(jni, result);
+    }
   }
   buffer_append(")");
 
@@ -155,12 +202,6 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
   fflush(fout);
 }
 
-void checkError(jvmtiError error) {
-  if (error != JVMTI_ERROR_NONE) {
-    fprintf(stderr, "mlogagent: JVMTI error %d\n", error);
-  }
-  assert(error == JVMTI_ERROR_NONE);
-}
 
 // Attach a breakpoint to configured methods
 void attachMethodBreakpoints(jvmtiEnv *jvmti_env, JNIEnv *jni, jclass clazz, ClassConfig *classConfig) {
