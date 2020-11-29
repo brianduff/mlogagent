@@ -112,18 +112,49 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
     jclass strClazz = (*jni)->FindClass(jni, "java/lang/String");
     jmethodID strValueOfMethod = (*jni)->GetStaticMethodID(jni, strClazz, "valueOf", "(Ljava/lang/Object;)Ljava/lang/String;");
 
+    jclass arrClazz = (*jni)->FindClass(jni, "java/util/Arrays");
+    jmethodID arrayToStringMethod = (*jni)->GetStaticMethodID(jni, arrClazz, "toString", "([Ljava/lang/Object;)Ljava/lang/String;");
 
     for (int i = 0; i < num_params; i++) {
-      jobject param;
-      // Try just unconditionally getting it as an object.
-      if (checkError((*jvmti_env)->GetLocalObject(jvmti_env, thread, 0, i + start_param, &param), "Failed to get param %d of %s\n", (i+start_param), methodConfig->method->name)) {
-        jobject str = (jstring) (*jni)->CallStaticObjectMethod(jni, strClazz, strValueOfMethod, param);
-        writeStringToBuffer(jni, str);
+      jint intParam = 0;
+      jlong longParam = 0;
+      jobject objParam;
 
+      switch (paramTypes[i]) {
+        case JVM_SIGNATURE_BOOLEAN:
+        case JVM_SIGNATURE_INT:
+        case JVM_SIGNATURE_SHORT:
+        case JVM_SIGNATURE_CHAR:
+        case JVM_SIGNATURE_BYTE:
+          if (checkError((*jvmti_env)->GetLocalInt(jvmti_env, thread, 0, i + start_param, &intParam), "Failed to get param %d of %s\n", (i + start_param), methodConfig->method->name)) {
+            if (paramTypes[i] == JVM_SIGNATURE_BOOLEAN) {
+              buffer_append("%s", intParam == 0 ? "false" : "true");
+            } else {
+              buffer_append("%d", intParam);
+            }
+          }
+          break;
+        case JVM_SIGNATURE_LONG:
+          if (checkError((*jvmti_env)->GetLocalLong(jvmti_env, thread, 0, i + start_param, &longParam), "Failed to get param %d of %s\n", (i + start_param), methodConfig->method->name)) {
+              buffer_append("%d", longParam);
+          }
+          break;
+        case JVM_SIGNATURE_ARRAY:
+          if (checkError((*jvmti_env)->GetLocalObject(jvmti_env, thread, 0, i + start_param, &objParam), "Failed to get param %d of %s\n", (i+start_param), methodConfig->method->name)) {
+            jobject str = (jstring) (*jni)->CallStaticObjectMethod(jni, strClazz, arrayToStringMethod, objParam);
+            writeStringToBuffer(jni, str);
+          }
+          break;
+        // TODO other types
+        default:
+          if (checkError((*jvmti_env)->GetLocalObject(jvmti_env, thread, 0, i + start_param, &objParam), "Failed to get param %d of %s\n", (i+start_param), methodConfig->method->name)) {
+            jobject str = (jstring) (*jni)->CallStaticObjectMethod(jni, strClazz, strValueOfMethod, objParam);
+            writeStringToBuffer(jni, str);
+          }
+        }
         if (i < num_params - 1) {
           buffer_append(", ");
         }
-      }
     }
   } else {
 
