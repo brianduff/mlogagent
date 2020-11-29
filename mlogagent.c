@@ -52,13 +52,26 @@ void findConfig(jmethodID method, ClassConfig **classConfigReturn, MethodConfig 
   }
 }
 
-void checkError(jvmtiError error) {
+bool checkError(jvmtiError error, const char *message, ...) {
   if (error != JVMTI_ERROR_NONE) {
-    fprintf(stderr, "mlogagent: JVMTI error %d\n", error);
+    va_list args;
+    va_start(args, message);
+    vfprintf(stderr, message, args);
+    fprintf(stderr, "  Caused by: JVMTI error %d\n", error);
+    return false;
+  }
+  return true;
+}
+
+void checkErrorOrDie(jvmtiError error, const char *message, ...) {
+  if (error != JVMTI_ERROR_NONE) {
+    va_list args;
+    va_start(args, message);
+    vfprintf(stderr, message, args);
+    fprintf(stderr, "  Caused by: JVMTI error %d\n", error);
   }
   assert(error == JVMTI_ERROR_NONE);
 }
-
 
 void writeStringToBuffer(JNIEnv *jni, jobject javaString) {
   jboolean isCopy;
@@ -103,12 +116,13 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
     for (int i = 0; i < num_params; i++) {
       jobject param;
       // Try just unconditionally getting it as an object.
-      checkError((*jvmti_env)->GetLocalObject(jvmti_env, thread, 0, i + start_param, &param));
-      jobject str = (jstring) (*jni)->CallStaticObjectMethod(jni, strClazz, strValueOfMethod, param);
-      writeStringToBuffer(jni, str);
+      if (checkError((*jvmti_env)->GetLocalObject(jvmti_env, thread, 0, i + start_param, &param), "Failed to get param %d of %s\n", (i+start_param), methodConfig->method->name)) {
+        jobject str = (jstring) (*jni)->CallStaticObjectMethod(jni, strClazz, strValueOfMethod, param);
+        writeStringToBuffer(jni, str);
 
-      if (i < num_params - 1) {
-        buffer_append(", ");
+        if (i < num_params - 1) {
+          buffer_append(", ");
+        }
       }
     }
   } else {
@@ -171,11 +185,11 @@ void JNICALL BreakpointCallback(jvmtiEnv *jvmti_env, JNIEnv *jni, jthread thread
   
   // Show a stack trace if we've been asked to.
   if (methodConfig->showTrace) {
-    jvmtiFrameInfo frames[20];
+    jvmtiFrameInfo frames[50];
     jint count;
     jvmtiError err;
 
-    err = (*jvmti_env)->GetStackTrace(jvmti_env, thread, 0, 20, frames, &count);
+    err = (*jvmti_env)->GetStackTrace(jvmti_env, thread, 0, 50, frames, &count);
     if (err == JVMTI_ERROR_NONE && count >= 1) {
       char *methodName;
       jclass declaringClass;
@@ -208,14 +222,19 @@ void attachMethodBreakpoints(jvmtiEnv *jvmti_env, JNIEnv *jni, jclass clazz, Cla
   MethodConfig *methodConfig = classConfig->method_list;
   while (methodConfig != NULL) {
     jmethodID mid = (*jni)->GetMethodID(jni, clazz, methodConfig->method->name, methodConfig->method->signature);
-    methodConfig->runtimeData = mid;
-    if (mid != NULL) {
-      printf("Setting breakpoint for %s.%s%s\n", classConfig->name, methodConfig->method->name, methodConfig->method->signature);
-      checkError((*jvmti_env)->SetBreakpoint(jvmti_env, mid, 0));
-    } else {
-      fprintf(stderr, "mlogagent: Can't find the method: %s.%s%s\n", classConfig->name, methodConfig->method->name, methodConfig->method->signature);
+    if (mid == NULL) {
+      (*jni)->ExceptionClear(jni);
+      // Try again, this time for a static method.
+      mid = (*jni)->GetStaticMethodID(jni, clazz, methodConfig->method->name, methodConfig->method->signature);
     }
 
+    if (mid == NULL) {
+      (*jni)->ExceptionClear(jni);
+      fprintf(stderr, "mlogagent: Can't find the method: %s.%s%s\n", classConfig->name, methodConfig->method->name, methodConfig->method->signature);
+    } else {
+      methodConfig->runtimeData = mid;
+      checkError((*jvmti_env)->SetBreakpoint(jvmti_env, mid, 0), "mlogagent: Failed to set breakpoint in %s.%s%s\n", classConfig->name, methodConfig->method->name, methodConfig->method->signature);
+    }
     methodConfig = methodConfig->next;
   }
 }
